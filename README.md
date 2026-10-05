@@ -68,7 +68,7 @@ The architecture will evolve as security scanning, cloud infrastructure, infrast
 ### Current
 
 - Python 3.12
-- Flask 3.1.1
+- Flask 3.1.3
 - Gunicorn 23.0.0
 - Docker
 - pytest
@@ -81,7 +81,6 @@ The architecture will evolve as security scanning, cloud infrastructure, infrast
 ### Planned
 
 - Docker image security scanning
-- Dependency vulnerability scanning
 - AWS
 - Amazon ECR
 - Terraform
@@ -94,7 +93,7 @@ The architecture will evolve as security scanning, cloud infrastructure, infrast
 
 The project uses GitHub Actions for continuous integration (CI).
 
-The current pipeline validates application changes before they are merged into the `main` branch.
+The current pipeline validates application changes and performs a dependency security audit before changes are considered ready for integration.
 
 ### CI Workflow
 
@@ -107,9 +106,12 @@ The pipeline runs on a GitHub-hosted Ubuntu runner and performs the following st
 
 1. Checks out the repository.
 2. Sets up Python 3.12.
-3. Installs the application and development dependencies.
-4. Runs the automated pytest test suite.
-5. Generates a terminal coverage report.
+3. Restores the pip dependency cache.
+4. Installs application and development dependencies.
+5. Installs the pinned `pip-audit` security scanner.
+6. Audits production dependencies for known vulnerabilities.
+7. Runs the automated pytest test suite.
+8. Generates a terminal coverage report.
 
 ### Current CI Flow
 
@@ -127,7 +129,15 @@ Ubuntu Runner
     |
     +--> Python 3.12
     |
+    +--> Restore pip Cache (if available)
+    |
     +--> Install Dependencies
+    |
+    +--> Dependency Security Audit
+    |       |
+    |       +--> pip-audit
+    |       |
+    |       +--> Pass / Fail
     |
     +--> Run pytest
     |
