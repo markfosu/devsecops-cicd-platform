@@ -23,3 +23,13 @@ htmlcov/
 # IDE/editor
 .vscode/
 .idea/
+
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+*.tfplan
