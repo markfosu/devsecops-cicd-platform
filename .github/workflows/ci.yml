@@ -1,3 +1,4 @@
+
 name: CI
 
 on:
@@ -35,3 +36,24 @@ jobs:
 
       - name: Run tests with coverage
         run: pytest --cov=app --cov-report=term-missing
+
+  container-scan:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t devsecops-cicd-platform:${{ github.sha }} .
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: devsecops-cicd-platform:${{ github.sha }}
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          format: table
+          exit-code: "0"
