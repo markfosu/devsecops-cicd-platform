@@ -1,4 +1,9 @@
+
 FROM python:3.12-slim
+
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -11,7 +16,11 @@ RUN groupadd --system appgroup \
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.txt \
+    && rm -rf /usr/local/lib/python3.12/site-packages/pip \
+              /usr/local/bin/pip \
+              /usr/local/bin/pip3 \
+              /usr/local/bin/pip3.12
 
 COPY app ./app
 
