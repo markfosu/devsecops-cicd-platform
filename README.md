@@ -174,7 +174,7 @@ The GitHub Actions workflow is located at:
 .github/workflows/ci.yml
 ```
 
-The current CI implementation focuses on automated testing and validation. Container image building, security scanning, infrastructure provisioning, deployment, and production monitoring will be introduced in later stages of the project.
+Container image vulnerability scanning is currently performed locally with Trivy and is not yet integrated into CI. Infrastructure provisioning, deployment automation, and production monitoring will be introduced in later stages of the project.
 
 ## Security
 
@@ -185,8 +185,26 @@ Current security controls include:
 - Docker build context is restricted using `.dockerignore`.
 - The container includes an application health check.
 - The runtime image uses the lightweight `python:3.12-slim` base image.
+- Available operating system package upgrades are applied during the Docker image build.
+- `pip` is removed from the runtime image after application dependencies are installed.
+- Python dependency vulnerabilities are audited in CI using `pip-audit`.
+- Container image vulnerabilities are assessed locally using Trivy.
 
-Future security improvements will include automated dependency and container vulnerability scanning, image hardening, secrets management, and infrastructure security controls.
+### Container Vulnerability Assessment
+
+The local image `devsecops-cicd-platform:1.0.5` was scanned using Trivy.
+
+- **Unfiltered scan:** 44 High-severity findings and 0 Critical findings, reported against Debian 13.7.
+- **Python packages:** No High or Critical findings were reported in the scanned Python package metadata.
+- **Filtered scan:** No High or Critical findings were reported when using `--ignore-unfixed`.
+
+The unfiltered findings include repeated package-level reports for the same CVEs. The filtered scan excludes findings for which Trivy does not identify an available fix; it does not establish that the image is vulnerability-free.
+
+The remaining operating system findings require ongoing assessment as Debian publishes security updates. Container image scanning is currently performed locally and is not yet integrated into the CI workflow.
+
+Future security improvements include automated container image scanning in CI, secrets management, and additional infrastructure security controls.
+
+
 
 ## Infrastructure
 
