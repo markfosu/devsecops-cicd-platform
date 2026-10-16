@@ -59,3 +59,55 @@ jobs:
           format: table
           exit-code: "1"
 
+  
+  publish:
+    name: Publish image to Amazon ECR
+    runs-on: ubuntu-24.04
+    needs: [test, container-scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: "095453158828"
+      ECR_REPOSITORY: devsecops-cicd-platform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build container image
+        run: |
+          IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+          docker build --tag "${IMAGE_URI}:${GITHUB_SHA}" .
+
+      - name: Scan image before publishing
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: 095453158828.dkr.ecr.us-east-1.amazonaws.com/devsecops-cicd-platform:${{ github.sha }}
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::095453158828:role/GitHubActionsECRPush-devsecops-cicd-platform
+          aws-region: us-east-1
+          role-session-name: GitHubActions-${{ github.run_id }}-${{ github.run_attempt }}
+          allowed-account-ids: "095453158828"
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Push image to Amazon ECR
+        run: |
+          IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+          docker push "${IMAGE_URI}:${GITHUB_SHA}"
+
