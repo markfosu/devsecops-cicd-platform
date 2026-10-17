@@ -82,12 +82,12 @@ jobs:
       - name: Build container image
         run: |
           IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
-          docker build --tag "${IMAGE_URI}:${GITHUB_SHA}" .
+          docker build --tag "${IMAGE_URI}:git-${GITHUB_SHA}" .
 
       - name: Scan image before publishing
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: 095453158828.dkr.ecr.us-east-1.amazonaws.com/devsecops-cicd-platform:${{ github.sha }}
+          image-ref: image-ref: 095453158828.dkr.ecr.us-east-1.amazonaws.com/devsecops-cicd-platform:git-${{ github.sha }}
           scanners: vuln
           vuln-type: os,library
           severity: HIGH,CRITICAL
@@ -109,5 +109,5 @@ jobs:
       - name: Push image to Amazon ECR
         run: |
           IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
-          docker push "${IMAGE_URI}:${GITHUB_SHA}"
+          docker push "${IMAGE_URI}:git-${GITHUB_SHA}"
 
