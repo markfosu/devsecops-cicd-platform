@@ -87,7 +87,7 @@ jobs:
       - name: Scan image before publishing
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: image-ref: 095453158828.dkr.ecr.us-east-1.amazonaws.com/devsecops-cicd-platform:git-${{ github.sha }}
+          image-ref: 095453158828.dkr.ecr.us-east-1.amazonaws.com/devsecops-cicd-platform:git-${{ github.sha }}
           scanners: vuln
           vuln-type: os,library
           severity: HIGH,CRITICAL
