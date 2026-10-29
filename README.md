@@ -1,343 +1,332 @@
 # DevSecOps CI/CD Platform
 
+A Python Flask API project demonstrating secure software delivery
+through automated testing, dependency auditing, container vulnerability
+scanning, infrastructure as code, and gated container publishing to
+Amazon ECR.
+
 ## Overview
 
-A production-oriented Python API platform designed to demonstrate modern DevOps and DevSecOps practices across the software delivery lifecycle.
+This project is developed incrementally. The application and container
+run locally, while GitHub Actions validates code, scans dependencies and
+container images, and publishes qualifying CI images to a private Amazon
+ECR repository. Terraform manages the ECR repository, and GitHub Actions
+uses AWS OpenID Connect (OIDC) for short-lived AWS credentials.
 
-The project is being developed incrementally, starting with application development, testing, containerization, and continuous integration before introducing security scanning, cloud infrastructure, infrastructure as code, observability, deployment automation, and failure recovery.
+**Current scope:** CI/CD and container image publishing are implemented.
+The application has **not** been deployed to AWS compute.
 
 ## Problem Statement
 
-The goal of this project is to build a reproducible application delivery platform that demonstrates how a software application can move from source code to a production-oriented runtime through automated and secure engineering practices.
-
-The platform is intentionally developed in stages so that each layer can be implemented, tested, verified, and documented before additional infrastructure is introduced.
+The goal is to demonstrate how an application can move from source code
+to a tested, security-checked container image using repeatable
+automation and least-privilege cloud access. Each stage is validated and
+documented before additional infrastructure is introduced.
 
 ## Architecture
 
-### Current Architecture
+### Current delivery flow
 
-```text
+``` text
 Developer
-    |
-    | git push / Pull Request
-    v
-GitHub Repository
-    |
-    +----------------------+
-    |                      |
-    v                      v
-GitHub Actions         Source Code
-    |
-    v
-Ubuntu Runner
-    |
-    +--> Python 3.12
-    |
-    +--> Install Dependencies
-    |
-    +--> Run pytest
-    |
-    +--> Coverage Report
-    |
-    v
-Pass / Fail
+   |
+   v
+GitHub repository (push / pull request)
+   |
+   v
+GitHub Actions
+   |
+   +--> Test job
+   |      +--> Python 3.12
+   |      +--> Install dependencies
+   |      +--> pip-audit production dependencies
+   |      +--> pytest and coverage
+   |
+   +--> Container-scan job
+   |      +--> Build Docker image
+   |      +--> Trivy vulnerability scan
+   |
+   v
+Required checks pass
+   |
+   +--> On push to main only:
+          +--> GitHub Actions OIDC authentication to AWS
+          +--> Push image to private Amazon ECR
+          +--> Tag: git-<full-commit-sha>
 
-Source Code
-    |
-    v
-Python Flask Application
-    |
-    v
-Gunicorn WSGI Server
-    |
-    v
-Docker Container
-    |
-    +--> Health Check
-    |
-    +--> Non-root application user
-    |
-    v
-Local Host :5000
+Application runtime (local)
+   |
+   v
+Flask API --> Gunicorn --> Docker container
+                           +--> non-root appuser
+                           +--> health check
+                           +--> localhost:5000
 ```
 
-The architecture will evolve as security scanning, cloud infrastructure, infrastructure as code, deployment automation, and monitoring are introduced.
+The CI publishing job depends on the test and container-scan jobs. A
+passing pull request does not itself publish an image; publishing is
+restricted to qualifying pushes to `main`.
 
 ## Technology Stack
 
-### Current
+### Implemented
 
-- Python 3.12
-- Flask 3.1.3
-- Gunicorn 23.0.0
-- Docker
-- pytest
-- pytest-cov
-- Git
-- GitHub
-- GitHub Actions
-- Ubuntu GitHub-hosted runners
+-   Python 3.12
+-   Flask 3.1.3
+-   Gunicorn 23.0.0
+-   Docker
+-   pytest and pytest-cov
+-   pip-audit for Python dependency auditing
+-   Trivy for container image vulnerability scanning
+-   Git and GitHub
+-   GitHub Actions and Ubuntu GitHub-hosted runners
+-   Terraform for Amazon ECR repository provisioning
+-   Amazon ECR for private container image storage
+-   AWS IAM and GitHub Actions OIDC for CI authentication
 
 ### Planned
 
-- Docker image security scanning
-- AWS
-- Amazon ECR
-- Terraform
-- Infrastructure security controls
-- Monitoring and observability
-- Failure recovery mechanisms
-- Automated cloud deployment
+-   Application deployment to AWS compute
+-   Application and infrastructure monitoring
+-   Centralized logging and alerting
+-   Automated deployment rollback and recovery
+-   Multi-environment deployment
 
 ## CI/CD Pipeline
 
-The project uses GitHub Actions for continuous integration (CI).
+The workflow is defined in `.github/workflows/ci.yml` and runs for
+pushes to `main` and pull requests targeting `main`.
 
-The current pipeline validates application changes and performs a dependency security audit before changes are considered ready for integration.
+### Validation and security stages
 
-### CI Workflow
+1.  Check out the repository.
+2.  Set up Python 3.12 and restore the pip cache when available.
+3.  Install application and development dependencies.
+4.  Run `pip-audit` against production dependencies.
+5.  Run the pytest suite and generate a coverage report.
+6.  Build the container image.
+7.  Scan the image with Trivy for High and Critical vulnerabilities.
+8.  Fail the scan gate for matching findings with available fixes.
+9.  For pushes to `main` that pass the required jobs, authenticate to
+    AWS through OIDC and push the image to ECR.
 
-The workflow is triggered by:
+The Trivy scan is configured with `ignore-unfixed: true`. This means
+findings for which the scanner does not identify an available fix are
+excluded from the failing gate; it does **not** mean those findings are
+harmless or that the image has no vulnerabilities.
 
-- Pushes to the `main` branch
-- Pull requests targeting the `main` branch
+### CI validation evidence
 
-The pipeline runs on a GitHub-hosted Ubuntu runner and performs the following steps:
+Previously recorded successful results:
 
-1. Checks out the repository.
-2. Sets up Python 3.12.
-3. Restores the pip dependency cache.
-4. Installs application and development dependencies.
-5. Installs the pinned `pip-audit` security scanner.
-6. Audits production dependencies for known vulnerabilities.
-7. Runs the automated pytest test suite.
-8. Generates a terminal coverage report.
-
-### Current CI Flow
-
-```text
-Developer
-    |
-    | git push / Pull Request
-    v
-GitHub Actions
-    |
-    v
-Ubuntu Runner
-    |
-    +--> Checkout Repository
-    |
-    +--> Python 3.12
-    |
-    +--> Restore pip Cache (if available)
-    |
-    +--> Install Dependencies
-    |
-    +--> Dependency Security Audit
-    |       |
-    |       +--> pip-audit
-    |       |
-    |       +--> Pass / Fail
-    |
-    +--> Run pytest
-    |
-    +--> Coverage Report
-    |
-    v
-Pass / Fail
-```
-
-### CI Validation Results
-
-The current test suite contains three automated tests covering the application's API endpoints.
-
-Latest successful CI run:
-
-```text
+``` text
 Tests:       3 passed
 Coverage:    92%
-Python:      3.12.14
+Python:      3.12
 Platform:    Ubuntu Linux
 ```
 
-The CI workflow has also been deliberately tested against a failing test condition.
+The workflow has also been tested with an intentionally incorrect
+expected HTTP status code. Pytest returned exit code `1`, and the
+workflow failed as expected. After the assertion was corrected, the
+workflow returned to a passing state.
 
-An incorrect expected HTTP status code caused pytest to return exit code `1`, which correctly caused the GitHub Actions workflow to fail. After correcting the test assertion, the workflow successfully returned to a passing state.
-
-This validates both the normal and failure paths of the CI pipeline.
-
-### Workflow Definition
-
-The GitHub Actions workflow is located at:
-
-```text
-.github/workflows/ci.yml
-```
-
-Container image vulnerability scanning is currently performed locally with Trivy and is not yet integrated into CI. Infrastructure provisioning, deployment automation, and production monitoring will be introduced in later stages of the project.
+These are previously recorded results; check the latest GitHub Actions
+run for current status.
 
 ## Security
 
-Current security controls include:
+### Application and container controls
 
-- Production container runs as a dedicated non-root user (`appuser`).
-- Development dependencies are separated from production dependencies.
-- Docker build context is restricted using `.dockerignore`.
-- The container includes an application health check.
-- The runtime image uses the lightweight `python:3.12-slim` base image.
-- Available operating system package upgrades are applied during the Docker image build.
-- `pip` is removed from the runtime image after application dependencies are installed.
-- Python dependency vulnerabilities are audited in CI using `pip-audit`.
-- Container image vulnerabilities are assessed locally using Trivy.
+-   The application container runs as the dedicated non-root user
+    `appuser`.
+-   Development dependencies are separated from production dependencies.
+-   `.dockerignore` limits the Docker build context.
+-   The container has a health check.
+-   The runtime image uses `python:3.12-slim`.
+-   Available operating system package upgrades are applied during image
+    build.
+-   `pip` is removed from the runtime image after dependency
+    installation.
+-   `pip-audit` audits production Python dependencies in CI.
+-   Trivy scans container images in CI before publishing.
 
-### Container Vulnerability Assessment
+### Container vulnerability assessment
 
-The local image `devsecops-cicd-platform:1.0.5` was scanned using Trivy.
+An earlier local Trivy scan of `devsecops-cicd-platform:1.0.5` reported:
 
-- **Unfiltered scan:** 44 High-severity findings and 0 Critical findings, reported against Debian 13.7.
-- **Python packages:** No High or Critical findings were reported in the scanned Python package metadata.
-- **Filtered scan:** No High or Critical findings were reported when using `--ignore-unfixed`.
+-   **Unfiltered scan:** 44 High-severity findings and 0 Critical
+    findings against Debian 13.7.
+-   **Python packages:** no High or Critical findings in the scanned
+    Python package metadata.
+-   **Filtered scan:** no High or Critical findings were reported with
+    `--ignore-unfixed`.
 
-The unfiltered findings include repeated package-level reports for the same CVEs. The filtered scan excludes findings for which Trivy does not identify an available fix; it does not establish that the image is vulnerability-free.
+The unfiltered findings included repeated package-level reports for some
+CVEs. The filtered scan excludes findings for which Trivy does not
+identify an available fix. Neither result establishes that the image is
+vulnerability-free. Operating system findings should be reassessed as
+base-image and package security updates become available.
 
-The remaining operating system findings require ongoing assessment as Debian publishes security updates. Container image scanning is currently performed locally and is not yet integrated into the CI workflow.
+### AWS authentication and permissions
 
-Future security improvements include automated container image scanning in CI, secrets management, and additional infrastructure security controls.
-
-
+GitHub Actions assumes a dedicated AWS IAM role using OIDC rather than
+storing long-lived AWS access keys in GitHub repository secrets. The
+trust policy restricts the intended GitHub repository and `main` branch,
+and the role's ECR permissions are scoped to the target repository and
+required publishing operations.
 
 ## Infrastructure
 
-Infrastructure automation has not yet been implemented.
+Terraform provisions the private Amazon ECR repository. Its configured
+controls include:
 
-The current application can be run locally using Python or Docker.
+-   Immutable image tags
+-   Image scanning on push
+-   AES-256 encryption
 
-Future infrastructure will include cloud deployment and Infrastructure as Code using Terraform.
+The ECR repository is:
+
+``` text
+095453158828.dkr.ecr.us-east-1.amazonaws.com/devsecops-cicd-platform
+```
+
+The Terraform state and configuration for the ECR repository are
+maintained under `terraform/ecr/`. The application has not yet been
+deployed to AWS compute.
+
+## ECR Image Tagging and Retention
+
+CI images use the following naming convention:
+
+``` text
+git-<full-git-commit-sha>
+```
+
+Example:
+
+``` text
+git-bb9952a63021d2e339fa8eee929d840a5a7e78c8
+```
+
+The tag links a CI image to the commit that produced it.
+
+An Amazon ECR lifecycle policy has been applied to retain the **10
+newest images matching the `git-` tag prefix**. Older matching CI images
+become eligible for expiration as new images are published. The initial
+lifecycle preview reported zero expiring images and zero archiving
+images.
+
+The rule is scoped to the `git-` prefix and does not match the existing
+`1.0.0` release tag, the older plain-SHA tag, or untagged images. ECR
+lifecycle evaluation is asynchronous, so images selected for expiration
+may not disappear immediately.
 
 ## Deployment
 
-### Local Python Deployment
+### Local Python deployment
 
 Create and activate a virtual environment:
 
-```bash
+``` bash
 python3 -m venv .venv
 source .venv/bin/activate
-```
-
-Install development dependencies:
-
-```bash
 pip install -r requirements-dev.txt
-```
-
-Run the application:
-
-```bash
 python -m app.main
 ```
 
-The application listens on:
+The application listens on `http://localhost:5000`.
 
-```text
-http://localhost:5000
-```
+### Local Docker deployment
 
-### Docker Deployment
+Build the image:
 
-Build the production-oriented container image:
-
-```bash
+``` bash
 docker build -t devsecops-cicd-platform:1.0.0 .
 ```
 
-Run the container:
+Run it:
 
-```bash
+``` bash
 docker run -d \
   --name devsecops-platform \
   -p 5000:5000 \
   devsecops-cicd-platform:1.0.0
 ```
 
-Verify the running container:
+Check the container:
 
-```bash
+``` bash
 docker ps
 ```
 
-The container should report a healthy status after the configured health check succeeds.
+The container should report a healthy status after its health check
+succeeds.
 
 ## Testing
 
-The application currently has three API tests covering:
+The API test suite covers:
 
-- `/health`
-- `/api/v1/status`
-- `/api/v1/info`
+-   `/health`
+-   `/api/v1/status`
+-   `/api/v1/info`
 
-Run the test suite:
+Run tests:
 
-```bash
+``` bash
 pytest
-```
-
-Current result:
-
-```text
-3 tests passed
-92% code coverage
 ```
 
 Generate a coverage report:
 
-```bash
+``` bash
 pytest --cov=app
 ```
 
-### Container Verification
+Previously recorded test evidence is three passing tests and 92%
+coverage. Re-run the suite to confirm the current result.
 
-The Dockerized application was also verified independently.
+### Container verification
 
-#### Health Endpoint
+Health endpoint:
 
-```bash
+``` bash
 curl http://localhost:5000/health
 ```
 
-Expected result:
+Expected response:
 
-```json
+``` json
 {
   "service": "devsecops-cicd-platform",
   "status": "healthy"
 }
 ```
 
-#### Status Endpoint
+Status endpoint:
 
-```bash
+``` bash
 curl http://localhost:5000/api/v1/status
 ```
 
-Expected result:
+Expected response:
 
-```json
+``` json
 {
   "status": "operational",
   "version": "1.0.0"
 }
 ```
 
-#### Information Endpoint
+Information endpoint:
 
-```bash
+``` bash
 curl http://localhost:5000/api/v1/info
 ```
 
-Expected result:
+Expected response:
 
-```json
+``` json
 {
   "application": "DevSecOps CI/CD Platform",
   "environment": "development",
@@ -345,55 +334,36 @@ Expected result:
 }
 ```
 
-### Container Security Verification
-
-The application container was verified to run as:
-
-```text
-appuser
-```
-
-rather than the root user.
-
-The Docker health check was also verified with:
-
-```text
-Status: healthy
-FailingStreak: 0
-```
-
-Gunicorn successfully started two workers inside the container.
+The container has previously been verified to run as `appuser`, with the
+Docker health check reporting `healthy`. Gunicorn was observed starting
+two workers in the container.
 
 ## Monitoring
 
-Application monitoring and centralized observability have not yet been implemented.
+Application monitoring and centralized observability have not yet been
+implemented. Current basic operational checks include the `/health`
+endpoint and Docker health status.
 
-The current container provides a basic operational health check through the `/health` endpoint.
+Planned improvements:
 
-Future improvements will include:
-
-- Application metrics
-- Structured logging
-- Monitoring
-- Alerting
-- Centralized log collection
+-   Application metrics
+-   Structured logging
+-   Monitoring and alerting
+-   Centralized log collection
 
 ## Failure Recovery
 
-Automated failure recovery has not yet been implemented.
+Automated deployment recovery has not yet been implemented. Current
+operational verification includes Docker health checks, the application
+health endpoint, Gunicorn process logging, and container status
+inspection.
 
-Current operational verification is provided through:
-
-- Docker health checks
-- Application health endpoint
-- Gunicorn process logging
-- Container status inspection
-
-Future iterations will introduce deployment recovery mechanisms and infrastructure-level health monitoring.
+Future work includes deployment recovery mechanisms, rollback
+procedures, and infrastructure-level health monitoring.
 
 ## Project Structure
 
-```text
+``` text
 devsecops-cicd-platform/
 ├── app/
 │   ├── __init__.py
@@ -404,6 +374,8 @@ devsecops-cicd-platform/
 │   └── workflows/
 │       └── ci.yml
 ├── docs/
+├── terraform/
+│   └── ecr/
 ├── .dockerignore
 ├── .gitignore
 ├── Dockerfile
@@ -413,24 +385,27 @@ devsecops-cicd-platform/
 └── README.md
 ```
 
+This is a high-level representation; the repository may contain
+additional files.
+
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.12+
-- Docker
-- Git
+-   Python 3.12+
+-   Docker
+-   Git
 
-### Clone the Repository
+### Clone the repository
 
-```bash
+``` bash
 git clone https://github.com/markfosu/devsecops-cicd-platform.git
 cd devsecops-cicd-platform
 ```
 
-### Run Tests Locally
+### Run tests locally
 
-```bash
+``` bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
@@ -439,64 +414,69 @@ pytest
 
 ### Run with Docker
 
-```bash
+``` bash
 docker build -t devsecops-cicd-platform:1.0.0 .
-
 docker run -d \
   --name devsecops-platform \
   -p 5000:5000 \
   devsecops-cicd-platform:1.0.0
-```
-
-Verify:
-
-```bash
 curl http://localhost:5000/health
 ```
 
 ## Lessons Learned
 
-### Runtime Reproducibility
+### Runtime reproducibility
 
-The project uses Python 3.12 and an isolated virtual environment for local development. Docker provides a separate, reproducible runtime environment for the application.
+Python virtual environments isolate local development dependencies,
+while Docker provides a consistent application runtime.
 
-### Production Application Serving
+### Production application serving
 
-Flask's development server is useful during development, but the container uses Gunicorn as the production WSGI server.
+Flask's development server is useful during development, but the
+container uses Gunicorn as the WSGI server.
 
-### Container Security
+### Container security
 
-The application does not require root privileges, so the container runs using a dedicated `appuser`.
+The application does not require root privileges, so the container runs
+under the dedicated `appuser` account.
 
-### Docker Layer Caching
+### Docker layer caching
 
-The dependency file is copied before the application source code so Docker can reuse the dependency installation layer when application code changes.
+Copying dependency files before application source code allows Docker to
+reuse the dependency installation layer when application code changes.
 
-### Health Checks
+### Health checks
 
-A running container does not necessarily mean that the application is functioning correctly. The Docker health check verifies that the application's `/health` endpoint is responding successfully.
+A running container does not necessarily mean the application is
+functioning correctly. The Docker health check verifies that `/health`
+responds successfully.
 
-### Continuous Integration
+### Continuous integration and security gates
 
-Automated CI provides repeatable validation in a clean environment. The project demonstrated both successful and failing CI runs, including diagnosis and recovery from a deliberately introduced test failure.
+Automated tests, dependency auditing, and container scanning provide
+repeatable checks. Required jobs gate publication so an image is not
+published through the normal CI path when those checks fail.
 
-### Incremental Engineering
+### Short-lived AWS credentials
 
-Each stage of the project is implemented and verified before additional complexity is introduced. This reduces troubleshooting scope and creates evidence for each engineering decision.
+OIDC lets GitHub Actions assume a restricted AWS role without storing
+long-lived AWS access keys in GitHub secrets.
+
+### Incremental engineering
+
+Implementing and validating one stage before adding complexity reduces
+troubleshooting scope and creates evidence for engineering decisions.
 
 ## Future Improvements
 
-Planned improvements include:
-
-1. Docker image security scanning
-2. Dependency vulnerability scanning
-3. Container image publishing
-4. AWS deployment
-5. Terraform infrastructure
-6. Automated cloud deployment
-7. Application and infrastructure monitoring
-8. Centralized logging
-9. Failure recovery and rollback mechanisms
-10. Production security hardening
-11. Multi-environment deployment
-12. Deployment documentation and architecture diagrams
+1.  Deploy the application to AWS compute after choosing and reviewing a
+    cost-appropriate architecture.
+2.  Add application and infrastructure monitoring.
+3.  Implement structured logging, centralized log collection, and
+    alerting.
+4.  Develop deployment rollback and failure-recovery mechanisms.
+5.  Add additional secrets-management controls where required.
+6.  Introduce multi-environment deployment.
+7.  Document operational runbooks and recovery procedures.
+8.  Continue reviewing vulnerability findings and updating the container
+    base image.
