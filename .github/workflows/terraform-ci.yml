@@ -50,3 +50,12 @@ jobs:
       - name: Validate Terraform configuration
         working-directory: terraform/ecr
         run: terraform validate
+
+      - name: Set up Python for Checkov
+        run: |
+          python3 -m venv .venv-checkov
+          .venv-checkov/bin/python -m pip install --upgrade pip
+          .venv-checkov/bin/python -m pip install checkov==3.4.3
+
+      - name: Run Checkov security scan
+        run: .venv-checkov/bin/checkov -d . --framework terraform
