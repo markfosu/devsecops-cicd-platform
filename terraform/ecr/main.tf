@@ -23,6 +23,7 @@ resource "aws_ecr_repository" "app" {
     scan_on_push = true
   }
 
+  #checkov:skip=CKV_AWS_136:Using AES256 encryption to avoid additional KMS key-management costs; encryption at rest remains enabled.
   encryption_configuration {
     encryption_type = "AES256"
   }
