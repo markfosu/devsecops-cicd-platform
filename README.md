@@ -3,7 +3,7 @@
 A Python Flask API project demonstrating secure software delivery
 through automated testing, dependency auditing, container vulnerability
 scanning, infrastructure as code, and gated container publishing to
-Amazon ECR.
+Amazon Elastic Container Registry (ECR).
 
 ## Overview
 
@@ -13,8 +13,8 @@ container images, and publishes qualifying CI images to a private Amazon
 ECR repository. Terraform manages the ECR repository, and GitHub Actions
 uses AWS OpenID Connect (OIDC) for short-lived AWS credentials.
 
-**Current scope:** CI/CD and container image publishing are implemented.
-The application has **not** been deployed to AWS compute.
+> **Current scope:** CI/CD and container image publishing are
+> implemented. The application has **not** been deployed to AWS compute.
 
 ## Problem Statement
 
@@ -25,7 +25,7 @@ documented before additional infrastructure is introduced.
 
 ## Architecture
 
-### Current delivery flow
+### Application delivery flow
 
 ``` text
 Developer
@@ -58,14 +58,40 @@ Application runtime (local)
    |
    v
 Flask API --> Gunicorn --> Docker container
-                           +--> non-root appuser
-                           +--> health check
-                           +--> localhost:5000
+                              +--> non-root appuser
+                              +--> health check
+                              +--> localhost:5000
 ```
 
 The CI publishing job depends on the test and container-scan jobs. A
 passing pull request does not itself publish an image; publishing is
 restricted to qualifying pushes to `main`.
+
+### Terraform validation flow
+
+``` text
+Terraform configuration
+        |
+        v
+GitHub Actions - Terraform CI
+        |
+        +--> Terraform fmt
+        |
+        +--> Terraform init
+        |       (backend disabled)
+        |
+        +--> Terraform validate
+        |
+        +--> Checkov security scan
+                |
+                v
+             Pass / Fail
+```
+
+Terraform CI runs independently of the application CI/CD workflow. It
+validates Terraform formatting and configuration, then performs
+Infrastructure-as-Code security scanning using Checkov. The workflow
+does not authenticate to AWS or provision infrastructure.
 
 ## Technology Stack
 
@@ -80,9 +106,12 @@ restricted to qualifying pushes to `main`.
 -   Trivy for container image vulnerability scanning
 -   Git and GitHub
 -   GitHub Actions and Ubuntu GitHub-hosted runners
--   Terraform for Amazon ECR repository provisioning
+-   Terraform for managing the Amazon ECR repository
 -   Amazon ECR for private container image storage
 -   AWS IAM and GitHub Actions OIDC for CI authentication
+-   Terraform CLI for infrastructure formatting and validation
+-   Checkov 3.4.3 for Infrastructure-as-Code security scanning
+-   GitHub Actions Terraform CI workflow
 
 ### Planned
 
@@ -94,8 +123,8 @@ restricted to qualifying pushes to `main`.
 
 ## CI/CD Pipeline
 
-The workflow is defined in `.github/workflows/ci.yml` and runs for
-pushes to `main` and pull requests targeting `main`.
+The application workflow is defined in `.github/workflows/ci.yml` and
+runs for pushes to `main` and pull requests targeting `main`.
 
 ### Validation and security stages
 
@@ -134,6 +163,83 @@ workflow returned to a passing state.
 These are previously recorded results; check the latest GitHub Actions
 run for current status.
 
+## Terraform CI and Infrastructure Security
+
+The project includes a separate Terraform CI workflow defined in
+`.github/workflows/terraform-ci.yml`.
+
+The workflow is triggered by:
+
+-   Pushes to `main` affecting Terraform files or the Terraform CI
+    workflow
+-   Pull requests targeting `main` affecting Terraform files or the
+    Terraform CI workflow
+-   Manual execution through GitHub Actions (`workflow_dispatch`)
+
+### Terraform validation stages
+
+The workflow performs the following steps:
+
+1.  Checks out the repository.
+2.  Sets up the Terraform CLI.
+3.  Checks Terraform formatting using `terraform fmt -check -recursive`.
+4.  Initializes the Terraform configuration using
+    `terraform init -backend=false -input=false`.
+5.  Validates the configuration using `terraform validate`.
+
+### Infrastructure-as-Code security scanning
+
+Checkov is integrated into the Terraform CI workflow to identify
+security misconfigurations and policy violations in Terraform
+configuration files.
+
+The scanner runs against the Terraform configuration using:
+
+``` bash
+checkov -d . --framework terraform
+```
+
+The Checkov version is pinned to `3.4.3` to maintain consistency between
+local and CI scans.
+
+The workflow fails when Checkov reports an applicable failed security
+check.
+
+### Current Checkov assessment
+
+The ECR Terraform configuration has been assessed against the following
+policies:
+
+  -----------------------------------------------------------------------
+  Check ID                Security control        Result
+  ----------------------- ----------------------- -----------------------
+  `CKV_AWS_41`            No hard-coded AWS       Passed
+                          credentials
+
+  `CKV_AWS_163`           ECR image scanning on   Passed
+                          push
+
+  `CKV_AWS_51`            Immutable ECR image     Passed
+                          tags
+
+  `CKV_AWS_136`           ECR encryption using    Skipped with documented
+                          KMS                     exception
+  -----------------------------------------------------------------------
+
+The repository uses AWS-managed AES-256 encryption at rest. The
+KMS-specific Checkov policy is intentionally skipped because the current
+project does not require customer-managed KMS keys. This is a documented
+policy exception, not an absence of encryption.
+
+The exception is recorded in `terraform/ecr/main.tf` using a Checkov
+suppression comment.
+
+### CI security boundary
+
+Terraform CI performs static configuration validation and security
+scanning. It does not authenticate to AWS, execute `terraform plan` or
+`terraform apply`, or create or modify AWS resources.
+
 ## Security
 
 ### Application and container controls
@@ -150,6 +256,10 @@ run for current status.
     installation.
 -   `pip-audit` audits production Python dependencies in CI.
 -   Trivy scans container images in CI before publishing.
+-   Checkov scans Terraform configurations for infrastructure security
+    misconfigurations.
+-   Terraform security exceptions are documented at the relevant
+    resource configuration.
 
 ### Container vulnerability assessment
 
@@ -157,9 +267,9 @@ An earlier local Trivy scan of `devsecops-cicd-platform:1.0.5` reported:
 
 -   **Unfiltered scan:** 44 High-severity findings and 0 Critical
     findings against Debian 13.7.
--   **Python packages:** no High or Critical findings in the scanned
+-   **Python packages:** No High or Critical findings in the scanned
     Python package metadata.
--   **Filtered scan:** no High or Critical findings were reported with
+-   **Filtered scan:** No High or Critical findings were reported with
     `--ignore-unfixed`.
 
 The unfiltered findings included repeated package-level reports for some
@@ -178,12 +288,17 @@ required publishing operations.
 
 ## Infrastructure
 
-Terraform provisions the private Amazon ECR repository. Its configured
+Terraform manages the private Amazon ECR repository. Its configured
 controls include:
 
 -   Immutable image tags
 -   Image scanning on push
 -   AES-256 encryption
+-   Lifecycle policy retaining the 10 newest CI images tagged with the
+    `git-` prefix
+
+Terraform formatting, initialization, validation, and security scanning
+are automated through the separate Terraform CI workflow.
 
 The ECR repository is:
 
@@ -372,7 +487,8 @@ devsecops-cicd-platform/
 │   └── test_api.py
 ├── .github/
 │   └── workflows/
-│       └── ci.yml
+│       ├── ci.yml
+│       └── terraform-ci.yml
 ├── docs/
 ├── terraform/
 │   └── ecr/
@@ -466,6 +582,20 @@ long-lived AWS access keys in GitHub secrets.
 
 Implementing and validating one stage before adding complexity reduces
 troubleshooting scope and creates evidence for engineering decisions.
+
+### Infrastructure-as-Code security
+
+Terraform validation confirms that configuration is syntactically valid,
+but does not guarantee that the configuration follows security best
+practices. Checkov adds policy-based security checks before
+infrastructure changes are considered ready.
+
+### Security policy exceptions
+
+A security scanner finding must be evaluated in context. The ECR
+repository uses AES-256 encryption at rest, so the KMS-specific Checkov
+requirement is documented as an intentional exception rather than
+changing the encryption configuration solely to achieve a passing scan.
 
 ## Future Improvements
 
