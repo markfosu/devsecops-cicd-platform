@@ -90,7 +90,39 @@ jobs:
       - name: Build Docker image
         run: docker build -t devsecops-cicd-platform:${{ github.sha }} .
 
-      
+      - name: Install Syft
+        env:
+          SYFT_VERSION: "1.57.0"
+        run: |
+          BASE_URL="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}"
+          ARCHIVE="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          CHECKSUMS="syft_${SYFT_VERSION}_checksums.txt"
+
+          curl -sSfL "${BASE_URL}/${ARCHIVE}" -o "${ARCHIVE}"
+          curl -sSfL "${BASE_URL}/${CHECKSUMS}" -o "${CHECKSUMS}"
+
+          grep -F "  ${ARCHIVE}" "${CHECKSUMS}" | sha256sum --check
+
+          tar -xzf "${ARCHIVE}" syft
+          sudo install -m 0755 syft /usr/local/bin/syft
+
+          syft version
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          mkdir -p sbom
+
+          syft devsecops-cicd-platform:${GITHUB_SHA} \
+            -o cyclonedx-json=sbom/devsecops-cicd-platform-${GITHUB_SHA}.cdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom/devsecops-cicd-platform-${{ github.sha }}.cdx.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
