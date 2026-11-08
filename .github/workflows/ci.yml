@@ -224,5 +224,5 @@ jobs:
 
           echo "SUCCESS: Published image digest verified."
 
-
+....
 
