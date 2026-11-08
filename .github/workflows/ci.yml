@@ -187,3 +187,40 @@ jobs:
           IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
           docker push "${IMAGE_URI}:git-${GITHUB_SHA}"
 
+      - name: Verify published image digest
+        run: |
+          IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+          IMAGE_TAG="git-${GITHUB_SHA}"
+
+          LOCAL_REPO_DIGEST=$(docker image inspect \
+            --format='{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' \
+            "${IMAGE_URI}:${IMAGE_TAG}")
+
+          ECR_DIGEST=$(aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-ids imageTag="${IMAGE_TAG}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+
+          echo "Local repository digest: ${LOCAL_REPO_DIGEST}"
+          echo "ECR image digest: ${ECR_DIGEST}"
+
+          EXPECTED_DIGEST="${IMAGE_URI}@${ECR_DIGEST}"
+
+          if [ -z "${LOCAL_REPO_DIGEST}" ]; then
+            echo "ERROR: Could not retrieve the local image repository digest."
+            exit 1
+          fi
+
+          if [ -z "${ECR_DIGEST}" ] || [ "${ECR_DIGEST}" = "None" ]; then
+            echo "ERROR: Could not retrieve the image digest from ECR."
+            exit 1
+          fi
+
+          if [ "${LOCAL_REPO_DIGEST}" != "${EXPECTED_DIGEST}" ]; then
+            echo "ERROR: Local and ECR image digests do not match."
+            exit 1
+          fi
+
+          echo "SUCCESS: Published image digest verified."
+
