@@ -223,6 +223,5 @@ jobs:
           fi
 
           echo "SUCCESS: Published image digest verified."
-
-
+...
 
