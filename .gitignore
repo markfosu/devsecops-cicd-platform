@@ -33,3 +33,9 @@ htmlcov/
 crash.log
 crash.*.log
 *.tfplan
+
+# Local Python environments
+.venv*/
+
+# Generated SBOM files
+sbom/
